@@ -11,22 +11,51 @@ use core::ops::{
 };
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-pub enum LogicValue<T> {
-    Uninitialized,
-    StrongDrive(DriveValue<T>),
-    WeakDrive(DriveValue<T>),
-    HigeImpedence,
-    DontCare,
+pub enum Logic {
+    U, X, W, Any, Sd(bool), Wd(bool),
 }
 
-impl Not for LogicValue<bool>{
+impl Not for Logic{
     type Output = Self;
 
     fn not(self) -> Self::Output{
         match self{
-            LogicValue::StrongDrive(x) => LogicValue::StrongDrive(!x),
-            LogicValue::WeakDrive(x) => LogicValue::WeakDrive(!x),
+            Logic::Sd(x) => Logic::Sd(!x),
+            Logic::Wd(x) => Logic::Wd(!x),
             _ => self,
+        }
+    }
+}
+impl BitAnd<Logic> for Logic{
+    type Output = Self;
+
+    fn bitand(self, rhs: Logic) -> Self::Output{
+        match self{
+            Logic::U=> match rhs {
+                Logic::Sd(true) => Logic::Sd(true),
+                Logic::Wd(true) => Logic::Sd(true),
+                _ => self,
+            }
+            Logic::X => match rhs {
+                Logic::U => rhs,
+                Logic::X => rhs,
+                Logic::Sd(true) => rhs,
+                Logic::Wd(true) => Logic::Sd(true),
+                _ => self,
+            }
+            Logic::W | Logic::Any => match rhs {
+                Logic::U => rhs,
+                Logic::Sd(true) => rhs,
+                Logic::Wd(true) => Logic::Sd(true),
+                _ => Logic::X,
+            }
+            Logic::Sd(true) | Logic::Wd(true)=> Logic::Sd(true),
+            Logic::Sd(false) | Logic::Wd(false)=> match rhs {
+                Logic::W | Logic::Any => Logic::X,
+                Logic::Wd(true) => Logic::Sd(true),
+                Logic::Wd(false) => Logic::Sd(false),
+                _ => rhs,
+            }
         }
     }
 }
