@@ -1,5 +1,3 @@
-use crate::drive::*;
-
 use core::ops::{
     Not,
     BitAndAssign,
@@ -12,147 +10,128 @@ use core::ops::{
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Logic {
-    U, X, W, Z, Any, Sd(bool), Wd(bool),
+    U, // Uninitialized
+    X, // Forcing Unkown
+    O, // Forcing logic '0'
+    I, // Forcing logic '1'
+    Z, // High Impedence
+    W, // Weak Unkown
+    L, // Weak logic '0'
+    H, // Weak logic '1'
+    Y, // '-' Don't Care logic
+}
+use Logic::*;
+
+const RESOLVED_T: [Logic; 81] = 
+//  U  X  O  I  Z  W  L  H  -
+//-------------------------------- 
+[
+    U, U, U, U, U, U, U, U, U, // U
+    U, X, X, X, X, X, X, X, X, // X
+    U, X, O, X, O, O, O, O, X, // O
+    U, X, X, I, I, I, I, I, X, // I
+    U, X, O, I, Z, W, L, H, X, // Z
+    U, X, O, I, W, W, W, W, X, // W
+    U, X, O, I, L, W, L, W, X, // L
+    U, X, O, I, H, W, W, H, X, // H
+    U, X, X, X, X, X, X, X, X, // -
+];
+const AND_T: [Logic; 81] = 
+// U  X  O  I  Z  W  L  H  -
+// -------------------------- */
+[
+    U, U, O, U, U, U, O, U, U, // U
+    U, X, O, X, X, X, O, X, X, // X
+    O, O, O, O, O, O, O, O, O, // O
+    U, X, O, I, X, X, O, I, X, // I
+    U, X, O, X, X, X, O, X, X, // Z
+    U, X, O, X, X, X, O, X, X, // W
+    O, O, O, O, O, O, O, O, O, // L
+    U, X, O, I, X, X, O, I, X, // H
+    U, X, O, X, X, X, O, X, X, // -
+];
+const OR_T: [Logic; 81] = [/*
+                              U  X  O  I  Z  W  L  H  -
+                              -------------------------- */
+    U, U, U, I, U, U, U, I, U, // U
+    U, X, X, I, X, X, X, I, X, // X
+    U, X, O, I, X, X, O, I, X, // O
+    I, I, I, I, I, I, I, I, I, // I
+    U, X, X, I, X, X, X, I, X, // Z
+    U, X, X, I, X, X, X, I, X, // W
+    U, X, O, I, X, X, O, I, X, // L
+    I, I, I, I, I, I, I, I, I, // H
+    U, X, X, I, X, X, X, I, X, // -
+];
+const XOR_T: [Logic; 81] = [/*
+                               U  X  O  I  Z  W  L  H  -
+                               -------------------------- */
+    U, U, U, U, U, U, U, U, U, // U
+    U, X, X, X, X, X, X, X, X, // X
+    U, X, O, I, X, X, O, I, X, // O
+    U, X, I, O, X, X, I, O, X, // I
+    U, X, X, X, X, X, X, X, X, // Z
+    U, X, X, X, X, X, X, X, X, // W
+    U, X, O, I, X, X, O, I, X, // L
+    U, X, I, O, X, X, I, O, X, // H
+    U, X, X, X, X, X, X, X, X, // -
+];
+impl Logic {
+    pub fn resolved(drv1: Logic, drv2: Logic) -> Self {
+        RESOLVED_T[9 * drv1 as usize + drv2 as usize]
+    }
 }
 
-impl Logic {
-    pub fn zero() -> Self {
-        Logic::Sd(false)
-    }
-    pub fn resolved(drv1: Logic, drv2: Logic) -> Self {
-        match drv1 {
-            Logic::U => Logic::U,
-            Logic::X |Logic::Any => match drv2 {
-                Logic::U => drv2,
-                _ => Logic::X,
-            }
-            Logic::Sd(true) => match drv2 {
-                Logic::U => Logic::U,
-                Logic::Sd(false) | Logic::X |Logic::Any => Logic::X,
-                _ => drv1,
-            }
-            Logic::Sd(false) => match drv2 {
-                Logic::U => Logic::U,
-                Logic::Sd(true) | Logic::X |Logic::Any => Logic::X,
-                _ => drv1,
-            }
-            Logic::Z => drv2,
-            Logic::W => match drv2 {
-                Logic::U | Logic::X => drv2,
-                Logic::Sd(x) => Logic::Sd(x),
-                Logic::Any => Logic::X,
-                _ => Logic::W,
-            }
-            Logic::Wd(true) => match drv2 {
-                Logic::Wd(false) => Logic::W,
-                Logic::Z => drv1,
-                Logic::Any => Logic::X,
-                _ => drv2,
-            }
-            Logic::Wd(false) => match drv2 {
-                Logic::Wd(true) => Logic::W,
-                Logic::Z => drv1,
-                Logic::Any => Logic::X,
-                _ => drv2,
-            }
-        }
-    }
-}
-/*     U   X   0   1   Z   W   L   H   - 
-L -- (‘U’,‘X’,‘0’,‘1’,‘L’,‘W’,‘L’,‘W’,‘X’)
-H -- (‘U’,‘X’,‘0’,‘1’,‘H’,‘W’,‘W’,‘H’,‘X’)
-*/
-impl Not for Logic{
+impl Not for Logic {
     type Output = Self;
 
-    fn not(self) -> Self::Output{
-        match self{
-            Logic::Sd(x) => Logic::Sd(!x),
-            Logic::Wd(x) => Logic::Wd(!x),
+    fn not(self) -> Self::Output {
+        match self {
+            I | H => O,
+            O | L => I,
             _ => self,
         }
     }
 }
+
 impl BitAnd<Logic> for Logic{
     type Output = Self;
 
     fn bitand(self, rhs: Logic) -> Self::Output{
-        match self{
-            Logic::U=> match rhs {
-                Logic::Sd(false) => Logic::Sd(false),
-                Logic::Wd(false) => Logic::Sd(false),
-                _ => self,
-            }
-            Logic::Z |Logic::X | Logic::W | Logic::Any => match rhs {
-                Logic::U => rhs,
-                Logic::Sd(false) => rhs,
-                Logic::Wd(false) => Logic::Sd(false),
-                _ => Logic::X,
-            }
-            Logic::Sd(false) | Logic::Wd(false)=> Logic::Sd(false),
-            Logic::Sd(true) | Logic::Wd(true)=> match rhs {
-                Logic::W | Logic::Any => Logic::X,
-                Logic::Wd(x) => Logic::Sd(x),
-                _ => rhs,
-            }
-        }
+        AND_T[9 * self as usize + rhs as usize]
     }
 }
+
 impl BitAndAssign<Logic> for Logic{
     fn bitand_assign(&mut self, rhs: Logic) {
-        *self = *self & rhs
+        *self = AND_T[9 * *self as usize + rhs as usize]
     }
 }
+
 impl BitOr<Logic> for Logic{
     type Output = Self;
 
     fn bitor(self, rhs: Logic) -> Self::Output{
-        match self{
-            Logic::U=> match rhs {
-                Logic::Sd(true) => Logic::Sd(true),
-                Logic::Wd(true) => Logic::Sd(true),
-                _ => self,
-            }
-            Logic::Z |Logic::X | Logic::W | Logic::Any => match rhs {
-                Logic::U => rhs,
-                Logic::Sd(true) => rhs,
-                Logic::Wd(true) => Logic::Sd(true),
-                _ => Logic::X,
-            }
-            Logic::Sd(true) | Logic::Wd(true)=> Logic::Sd(true),
-            Logic::Sd(false) | Logic::Wd(false)=> match rhs {
-                Logic::W | Logic::Any => Logic::X,
-                Logic::Wd(x) => Logic::Sd(x),
-                _ => rhs,
-            }
-        }
+        OR_T[9 * self as usize + rhs as usize]
     }
 }
+
 impl BitOrAssign<Logic> for Logic{
     fn bitor_assign(&mut self, rhs: Logic) {
-        *self = *self | rhs
+        *self = OR_T[9 * *self as usize + rhs as usize]
     }
 }
+
 impl BitXor<Logic> for Logic{
     type Output = Self;
 
     fn bitxor(self, rhs: Logic) -> Self::Output{
-        match self{
-            Logic::U=> self,
-            Logic::Z |Logic::X | Logic::W | Logic::Any => match rhs {
-                Logic::U => rhs,
-                _ => Logic::X,
-            }
-            Logic::Sd(x) | Logic::Wd(x)=> match rhs {
-                Logic::U => rhs,
-                Logic::X | Logic::W | Logic::Any => Logic::X,
-                Logic::Wd(y) | Logic::Sd(y) => Logic::Sd(x^y),
-            }
-        }
+        XOR_T[9 * self as usize + rhs as usize]
     }
 }
+
 impl BitXorAssign<Logic> for Logic{
     fn bitxor_assign(&mut self, rhs: Logic) {
-        *self = *self ^ rhs
+        *self = XOR_T[9 * *self as usize + rhs as usize]
     }
 }
